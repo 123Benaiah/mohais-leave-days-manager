@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(node -c:*)",
+      "Bash(npm start)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(tasklist:*)",
+      "Bash(node migrate.js:*)",
+      "Bash(del \"C:\\\\Users\\\\Benaiah L\\\\OneDrive\\\\Documents\\\\mohais-day-manager\\\\server\\\\migrate.js\")",
+      "Bash(dir:*)",
+      "Bash(npm install:*)",
+      "Bash(node scripts/initAdminTables.js:*)",
+      "Bash(node test-email.js:*)",
+      "Bash(node scripts/generateJwtSecret.js:*)",
+      "Bash(node test-auth.js:*)",
+      "Bash(taskkill:*)",
+      "Bash(\"C:\\\\Windows\\\\System32\\\\taskkill.exe\" /PID 4328 /F)",
+      "Bash(Stop-Process -Id 4328 -Force)",
+      "Bash(node:*)",
+      "Bash(nc:*)",
+      "Bash(:)",
+      "Bash(ipconfig:*)",
+      "Bash(cd:*)",
+      "Bash(npm run dev:*)",
+      "Bash(python:*)",
+      "Bash(copy \"C:\\\\Users\\\\Benaiah L\\\\OneDrive\\\\Pictures\\\\Saved Pictures\\\\TotalEnergies_logo.svg.png\" \"client/src/assets/logo.png\")",
+      "Bash(wmic process where \"name=''node.exe'' and commandline like ''%server/server.js%''\" get processid)",
+      "Bash(npm start:*)",
+      "Bash(cmd.exe /c \"taskkill /F /PID 3816\")",
+      "Bash(wmic process where \"ProcessId=3816\" call terminate)",
+      "Bash(find:*)"
+    ]
+  }
+}
