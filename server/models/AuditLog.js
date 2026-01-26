@@ -37,18 +37,19 @@ class AuditLog {
   }
 
   // Get all audit logs with pagination - UPDATED with all filters
-  static async findAll({ 
-    page = 1, 
-    limit = 50, 
-    entityType = null, 
-    actionType = null, 
-    employeeNumber = null, 
-    startDate = null, 
-    endDate = null, 
-    performedById = null, 
+  static async findAll({
+    page = 1,
+    limit = 50,
+    entityType = null,
+    actionType = null,
+    entityIds = null, // Support multiple entity IDs (for multi-employee reporting)
+    employeeNumber = null,
+    startDate = null,
+    endDate = null,
+    performedById = null,
     performedByName = null,
     employeeName = null,
-    adminName = null 
+    adminName = null
   }) {
     let query = 'SELECT * FROM audit_logs WHERE 1=1';
     const params = [];
@@ -56,6 +57,14 @@ class AuditLog {
     if (entityType) {
       query += ' AND entity_type = ?';
       params.push(entityType);
+    }
+
+    // Support multiple entity IDs (e.g., multiple employees)
+    if (entityIds && Array.isArray(entityIds) && entityIds.length > 0) {
+      query += ` AND entity_id IN (${entityIds.join(',')})`;
+    } else if (entityIds && typeof entityIds === 'number') {
+      query += ' AND entity_id = ?';
+      params.push(entityIds);
     }
 
     if (actionType) {
@@ -117,11 +126,11 @@ class AuditLog {
       try {
         return {
           ...row,
-          old_values: row.old_values ? 
-            (typeof row.old_values === 'string' ? JSON.parse(row.old_values) : row.old_values) 
+          old_values: row.old_values ?
+            (typeof row.old_values === 'string' ? JSON.parse(row.old_values) : row.old_values)
             : null,
-          new_values: row.new_values ? 
-            (typeof row.new_values === 'string' ? JSON.parse(row.new_values) : row.new_values) 
+          new_values: row.new_values ?
+            (typeof row.new_values === 'string' ? JSON.parse(row.new_values) : row.new_values)
             : null
         };
       } catch (e) {
@@ -160,16 +169,17 @@ class AuditLog {
   }
 
   // Get count for pagination - UPDATED with all filters
-  static async count({ 
-    entityType = null, 
-    actionType = null, 
-    employeeNumber = null, 
-    startDate = null, 
-    endDate = null, 
-    performedById = null, 
+  static async count({
+    entityType = null,
+    entityIds = null, // Support multiple entity IDs (for multi-employee reporting)
+    actionType = null,
+    employeeNumber = null,
+    startDate = null,
+    endDate = null,
+    performedById = null,
     performedByName = null,
     employeeName = null,
-    adminName = null 
+    adminName = null
   }) {
     let query = 'SELECT COUNT(*) as total FROM audit_logs WHERE 1=1';
     const params = [];
@@ -177,6 +187,14 @@ class AuditLog {
     if (entityType) {
       query += ' AND entity_type = ?';
       params.push(entityType);
+    }
+
+    // Support multiple entity IDs (e.g., multiple employees)
+    if (entityIds && Array.isArray(entityIds) && entityIds.length > 0) {
+      query += ` AND entity_id IN (${entityIds.join(',')})`;
+    } else if (entityIds && typeof entityIds === 'number') {
+      query += ' AND entity_id = ?';
+      params.push(entityIds);
     }
 
     if (actionType) {

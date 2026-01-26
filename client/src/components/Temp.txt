@@ -425,15 +425,14 @@ const handleSubtractDays = async (id, days) => {
         }
 
         setExportingCSV(true);
-
+        
         try {
             // Simulate small delay for file generation
             await new Promise(resolve => setTimeout(resolve, 300));
-
+            
             const selected = employees.filter(emp => selectedEmployees.includes(emp.id));
-            const headers = ['#', 'Employee Number', 'Name', 'Total Days', 'Used Days', 'Remaining Days'];
-            const rows = selected.map((emp, idx) => [
-                idx + 1,
+            const headers = ['Employee Number', 'Name', 'Total Days', 'Used Days', 'Remaining Days'];
+            const rows = selected.map(emp => [
                 emp.employee_number || '-',
                 emp.name,
                 emp.total_days,
@@ -449,19 +448,19 @@ const handleSubtractDays = async (id, days) => {
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
-
+            
             link.setAttribute('href', url);
             link.setAttribute('download', `employees_${new Date().getTime()}.csv`);
             link.style.visibility = 'hidden';
-
+            
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-
+            
             // Give browser time to process download
             await new Promise(resolve => setTimeout(resolve, 500));
             URL.revokeObjectURL(url);
-
+            
             showToast('success', 'Downloaded', `${selectedEmployees.length} employee(s) exported as CSV.`);
         } catch (error) {
             showToast('error', 'Download Failed', 'Failed to download CSV file. Please try again.');
@@ -469,7 +468,7 @@ const handleSubtractDays = async (id, days) => {
         } finally {
             setExportingCSV(false);
         }
-    }; // Close exportSelectedCSV function
+    };
 
     const exportSelectedPDF = async () => {
         if (selectedEmployees.length === 0) {
@@ -487,85 +486,6 @@ const handleSubtractDays = async (id, days) => {
             await generateEmployeeReportPDF(selected);
 
             showToast('success', 'Downloaded', `${selectedEmployees.length} employee(s) exported as PDF.`);
-        } catch (error) {
-            console.error('PDF export error:', error);
-            showToast('error', 'Download Failed', 'Failed to generate PDF. Please try again.');
-        } finally {
-            setExportingPDF(false);
-        }
-    };
-
-    const exportFilteredCSV = async () => {
-        setExportingCSV(true);
-
-        try {
-            // Simulate small delay for file generation
-            await new Promise(resolve => setTimeout(resolve, 300));
-
-            // Use main filtered employees list for export
-            const exportData = filteredEmployees.length > 0 ? filteredEmployees : employees;
-
-            if (exportData.length === 0) {
-                showToast('warning', 'No Data', 'No employees to export.');
-                return;
-            }
-
-            const headers = ['#', 'Employee Number', 'Name', 'Total Days', 'Used Days', 'Remaining Days'];
-            const rows = exportData.map((emp, idx) => [
-                idx + 1,
-                emp.employee_number || '-',
-                emp.name,
-                emp.total_days,
-                emp.used_days,
-                emp.remaining_days
-            ]);
-
-            const csvContent = [
-                headers.join(','),
-                ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-            ].join('\n');
-
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-
-            link.setAttribute('href', url);
-            link.setAttribute('download', `employees_filtered_${new Date().getTime()}.csv`);
-            link.style.visibility = 'hidden';
-
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            // Give browser time to process download
-            await new Promise(resolve => setTimeout(resolve, 500));
-            URL.revokeObjectURL(url);
-
-            showToast('success', 'Downloaded', `${exportData.length} employee(s) exported as CSV.`);
-        } catch (error) {
-            showToast('error', 'Download Failed', 'Failed to download CSV file. Please try again.');
-            console.error('CSV export error:', error);
-        } finally {
-            setExportingCSV(false);
-        }
-    };
-
-    const exportFilteredPDF = async () => {
-        setExportingPDF(true);
-
-        try {
-            // Use main filtered employees list for export
-            const exportData = filteredEmployees.length > 0 ? filteredEmployees : employees;
-
-            if (exportData.length === 0) {
-                showToast('warning', 'No Data', 'No employees to export.');
-                return;
-            }
-
-            // Use the utility to generate the PDF
-            await generateEmployeeReportPDF(exportData);
-
-            showToast('success', 'Downloaded', `${exportData.length} employee(s) exported as PDF.`);
         } catch (error) {
             console.error('PDF export error:', error);
             showToast('error', 'Download Failed', 'Failed to generate PDF. Please try again.');
