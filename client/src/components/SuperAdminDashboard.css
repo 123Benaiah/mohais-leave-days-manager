@@ -60,6 +60,13 @@
   align-items: center;
   gap: 1rem;
 }
+.sa-logo {
+  height: 40px;        /* 👈 controls size */
+  width: auto;         /* keeps aspect ratio */
+  object-fit: contain; /* prevents stretching */
+  display: block;
+}
+
 
 .sa-user {
   color: rgba(255, 255, 255, 0.9);

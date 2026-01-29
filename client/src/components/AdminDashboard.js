@@ -86,7 +86,7 @@ function AdminDashboard() {
         {/* Welcome Section */}
         <div className="admin-welcome">
           <h2>Welcome, {admin?.name || admin?.email}!</h2>
-          <p>Manage employee leave days and track employee information.</p>
+          <p>Manage employee field work days and track employee information.</p>
         </div>
 
         {/* Stats Cards */}
@@ -107,7 +107,7 @@ function AdminDashboard() {
             </div>
             <div className="admin-stat-info">
               <h3>{employeeStats.lowDays}</h3>
-              <p>Low Leave Days (&lt;10)</p>
+              <p>Low field work Days (&lt;10)</p>
             </div>
           </div>
         </div>
@@ -127,11 +127,11 @@ function AdminDashboard() {
         <div className="admin-instructions">
           <h3>How to Use</h3>
           <ul>
-            <li>Click "Manage Employees" to view and manage all employee leave days</li>
+            <li>Click "Manage Employees" to view and manage all employee field work days</li>
             <li>Add, edit, or delete employees as needed</li>
-            <li>Update employee leave days using the +, -, or Set buttons</li>
+            <li>Update employee field work days using the +, -, or Set buttons</li>
             <li>All changes are automatically logged in the audit system</li>
-            <li>Monitor employees with low leave days (less than 10 days remaining)</li>
+            <li>Monitor employees with low field work days (less than 10 days remaining)</li>
             <li>Use the search function to quickly find specific employees</li>
             <li>Export data or generate reports as needed</li>
           </ul>

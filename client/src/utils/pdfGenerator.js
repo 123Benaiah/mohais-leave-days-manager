@@ -141,9 +141,28 @@ export const generateEmployeeReportPDF = async (employees) => {
   const htmlContent = `
     <div style="width: 100%; max-width: 100%;">
       <!-- Header Section -->
-      <div style="border-bottom: 3px solid #2c3e50; padding-bottom: 20px; margin-bottom: 20px;">
-        <h1 style="text-align: center; color: #2c3e50; margin: 0 0 15px 0; font-size: 24px;">📊 Employee Leave Management Report</h1>
-        <div style="display: table; width: 100%; margin-top: 15px;">
+<div style="border-bottom: 3px solid #2c3e50; padding-bottom: 20px; margin-bottom: 20px;">
+  <h1
+    style="
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: #2c3e50;
+      margin: 0 0 15px 0;
+      font-size: 24px;
+    "
+  >
+    <img
+      src="/coat-of-arms-of-zambia.png"
+      alt="Zambia Coat of Arms"
+      style="height: 40px; width: auto;"
+    />
+    Employee Field Work Days Management Report
+  </h1>
+
+  <div style="display: table; width: 100%; margin-top: 15px;">
+
           <div style="display: table-cell; width: 33%; background-color: #ecf0f1; padding: 10px; border-radius: 5px; text-align: center;">
             <p style="color: #7f8c8d; margin: 0; font-size: 12px; font-weight: bold;">Generated Date</p>
             <p style="color: #2c3e50; margin: 5px 0 0 0; font-size: 14px; font-weight: bold;">${formattedDate}</p>

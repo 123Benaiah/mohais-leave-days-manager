@@ -44,7 +44,13 @@ function SuperAdminLogin() {
   return (
     <div className="super-admin-login">
       <div className="login-container">
-        <div className="login-header">
+          <div className="login-header">
+    <img
+      src="/coat-of-arms-of-zambia.png"
+      alt="Zambia Coat of Arms"
+      className="login-logo"
+    />
+
           <h1>MOHAIS - LEAVE DAYS MANAGER </h1>
           <p>Super Admin Portal</p>
         </div>
@@ -98,7 +104,6 @@ function SuperAdminLogin() {
         </form>
 
         <div className="login-footer">
-          <p>Super Admin access only</p>
           <a href="/admin/login" className="admin-link">Regular Admin Login →</a>
         </div>
       </div>

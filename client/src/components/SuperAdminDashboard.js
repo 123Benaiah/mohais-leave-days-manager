@@ -143,7 +143,7 @@ function SuperAdminDashboard() {
             case 'DELETE': return 'Deleted';
             case 'ADD_DAYS': return 'Added Days';
             case 'SUBTRACT_DAYS': return 'Subtracted';
-            case 'SET_DAYS': return 'Set Leave  Days';
+            case 'SET_DAYS': return 'Set field work  Days';
             default: return actionType ? actionType.replace('_', ' ') : 'Unknown';
         }
     }, []);
@@ -155,7 +155,7 @@ function SuperAdminDashboard() {
             case 'ADMIN': return 'Admin Account';
             case 'SUPER_ADMIN': return 'Super Admin Account';
             case 'EMPLOYEE': return 'Employee';
-            case 'LEAVE_REQUEST': return 'Leave Request';
+            case 'LEAVE_REQUEST': return 'field work Request';
             default: return entityType.replace('_', ' ');
         }
     }, []);
@@ -250,14 +250,14 @@ function SuperAdminDashboard() {
             const change = newValues.leave_days - oldValues.leave_days;
             const changeText = change > 0 ? `Increased by ${change} days` : `Decreased by ${Math.abs(change)} days`;
             // FIX: CHANGED ARROW "→" TO "to"
-            changes.push(`Leave days: ${oldValues.leave_days} to ${newValues.leave_days} (${changeText})`);
+            changes.push(`field work days: ${oldValues.leave_days} to ${newValues.leave_days} (${changeText})`);
         }
         
         if (oldValues.total_leave_days !== undefined && newValues.total_leave_days !== undefined) {
             const change = newValues.total_leave_days - oldValues.total_leave_days;
             const changeText = change > 0 ? `Increased by ${change} days` : `Decreased by ${Math.abs(change)} days`;
             // FIX: CHANGED ARROW "→" TO "to"
-            changes.push(`Total leave balance: ${oldValues.total_leave_days} to ${newValues.total_leave_days} (${changeText})`);
+            changes.push(`Total field work balance: ${oldValues.total_leave_days} to ${newValues.total_leave_days} (${changeText})`);
         }
         
         if (oldValues.status !== undefined && newValues.status !== undefined) {
@@ -810,9 +810,28 @@ function SuperAdminDashboard() {
 
         const htmlContent = `
         <div style="width: 100%; max-width: 100%;">
-            <div style="border-bottom: 3px solid #2c3e50; padding-bottom: 20px; margin-bottom: 20px;">
-            <h1 style="text-align: center; color: #2c3e50; margin: 0 0 15px 0; font-size: 24px;">📊 Audit Logs Report (${selectedLogObjects.length} Selected)</h1>
-            <div style="display: table; width: 100%; margin-top: 15px;">
+           <div style="border-bottom: 3px solid #2c3e50; padding-bottom: 20px; margin-bottom: 20px;">
+  <h1
+    style="
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: #2c3e50;
+      margin: 0 0 15px 0;
+      font-size: 24px;
+    "
+  >
+    <img
+      src="/coat-of-arms-of-zambia.png"
+      alt="Zambia Coat of Arms"
+      style="height: 40px; width: auto;"
+    />
+    Audit Logs Report (${selectedLogObjects.length} Selected)
+  </h1>
+
+  <div style="display: table; width: 100%; margin-top: 15px;">
+
                 <div style="display: table-cell; width: 33%; background-color: #ecf0f1; padding: 10px; border-radius: 5px; text-align: center;">
                 <p style="color: #7f8c8d; margin: 0; font-size: 12px; font-weight: bold;">Generated Date</p>
                 <p style="color: #2c3e50; margin: 5px 0 0 0; font-size: 14px; font-weight: bold;">${formattedDate}</p>
@@ -1539,10 +1558,17 @@ useEffect(() => {
         <div className="super-admin-dashboard"> 
             {/* Header */}
             <header className="sa-header">
-                <div className="sa-header-left">
-                    <span className="sa-crown">👑</span> 
-                    <h1>Super Admin Panel</h1> 
-                </div> 
+              <div className="sa-header-left">
+  <img
+    src="/coat-of-arms-of-zambia.png"
+    alt="Zambia Coat of Arms"
+    className="sa-logo"
+  />
+
+  <span className="sa-crown"></span>
+  <h1>Super Admin Panel</h1>
+</div>
+
                 <div className="sa-header-right">
                     <span className="sa-user"> 
                         {superAdmin?.name || superAdmin?.email} 
@@ -2189,7 +2215,7 @@ useEffect(() => {
                                     placeholder="Enter email" required />
                             </div> 
                             <div className="sa-form-group">
-                                <label>New Password (leave blank to keep current)</label> 
+                                <label>New Password (field work blank to keep current)</label> 
                                 <input type="password" value={formData.password}
                                     onChange={(e) => setFormData({...formData, password: e.target.value})}
                                     placeholder="Enter new password" />
@@ -2235,7 +2261,7 @@ useEffect(() => {
                         <h3>Select Employees for Report</h3>
                         <p className="sa-modal-subtext">
                             {selectedEmployees.length} employee{selectedEmployees.length !== 1 ? 's' : ''} selected.
-                            {selectedEmployees.length === 0 && ' Select specific employees or leave empty to report on all.'}
+                            {selectedEmployees.length === 0 && ' Select specific employees or field work empty to report on all.'}
                         </p>
 
                         {/* Search Box */}

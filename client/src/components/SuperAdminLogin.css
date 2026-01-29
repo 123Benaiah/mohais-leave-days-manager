@@ -59,6 +59,17 @@ background: linear-gradient(135deg, #1f1f1f, #2a2a2a, #1f1f1f);
   font-size: 0.85rem;
   margin-top: 0.25rem;
 }
+.login-header {
+  text-align: center;
+}
+
+.login-logo {
+  height: 60px;       
+  width: auto;
+  object-fit: contain;
+  margin-bottom: 1rem;
+}
+
 
 /* Form */
 .login-form {

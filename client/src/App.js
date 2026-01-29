@@ -642,6 +642,7 @@ const handleSubtractDays = async (id, days) => {
             {
                 width: '100%',
                 marginBottom: '1rem',
+                marginTop: '2rem',
                 display: 'flex',
                 justifyContent: 'flex-start'
             }
@@ -675,7 +676,7 @@ const handleSubtractDays = async (id, days) => {
         div >
 
         <
-        h1 > MOHAIS LEAVE DAYS MANAGER < /h1>
+        h1 > MOHAIS FIELD WORK DAYS MANAGEMENT BOARD < /h1>
 
         {
             message && < div className = "message" > {
