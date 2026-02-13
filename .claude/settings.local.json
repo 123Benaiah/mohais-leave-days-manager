@@ -30,7 +30,12 @@
       "Bash(npm start:*)",
       "Bash(cmd.exe /c \"taskkill /F /PID 3816\")",
       "Bash(wmic process where \"ProcessId=3816\" call terminate)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(:UsersBenaiah LOneDriveDocumentsmohais-day-managerclientsrcutilspdfGenerator.js)",
+      "Bash(:UsersBenaiah LOneDriveDocumentsmohais-day-managerclientsrccomponentsSuperAdminDashboard.js)",
+      "Bash(UsersBenaiah LOneDriveDocumentsmohais-day-managerclientsrccomponentsSuperAdminDashboard.js)",
+      "Bash(UsersBenaiah LOneDriveDocumentsmohais-day-managerserverroutessuperAdmin.js)",
+      "Bash(mysql:*)"
     ]
   }
 }

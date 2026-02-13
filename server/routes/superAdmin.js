@@ -18,7 +18,6 @@ const authenticateSuperAdmin = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Verify it's a super admin token
     if (decoded.type !== 'super_admin') {
       return res.status(403).json({ success: false, message: 'Access denied. Super admin only.' });
     }
@@ -117,108 +116,6 @@ router.get('/me', authenticateSuperAdmin, async (req, res) => {
   });
 });
 
-// Update super admin profile (name/email)
-router.put('/me', authenticateSuperAdmin, async (req, res) => {
-  try {
-    const { name, email } = req.body;
-
-    if (!name && !email) {
-      return res.status(400).json({ success: false, message: 'No updates provided' });
-    }
-
-    const updates = [];
-    const params = [];
-
-    if (name !== undefined) {
-      updates.push('name = ?');
-      params.push(name);
-    }
-
-    if (email !== undefined) {
-      updates.push('email = ?');
-      params.push(email);
-    }
-
-    params.push(req.superAdmin.id);
-
-    await pool.query(
-      `UPDATE super_admin SET ${updates.join(', ')} WHERE id = ?`,
-      params
-    );
-
-    const updated = await SuperAdmin.findById(req.superAdmin.id);
-
-    // Log the action
-    await AuditLog.create({
-      actionType: 'UPDATE',
-      entityType: 'SUPER_ADMIN',
-      entityId: updated.id,
-      entityName: updated.name || updated.email,
-      performedById: req.superAdmin.id,
-      performedByType: 'SUPER_ADMIN',
-      performedByName: req.superAdmin.name,
-      oldValues: { name: req.superAdmin.name, email: req.superAdmin.email },
-      newValues: { name: updated.name, email: updated.email },
-      description: 'Updated super admin profile',
-      ipAddress: req.ip
-    });
-
-    res.json({ success: true, superAdmin: updated });
-  } catch (error) {
-    console.error('Error updating super admin profile:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-
-// Update super admin password
-router.put('/me/password', authenticateSuperAdmin, async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ success: false, message: 'Current and new passwords are required' });
-    }
-
-    // fetch hash
-    const [rows] = await pool.query(
-      'SELECT password_hash FROM super_admin WHERE id = ?',
-      [req.superAdmin.id]
-    );
-    const record = rows[0];
-    if (!record) {
-      return res.status(404).json({ success: false, message: 'Super admin not found' });
-    }
-
-    const valid = await bcrypt.compare(currentPassword, record.password_hash);
-    if (!valid) {
-      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
-    }
-
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-    await pool.query(
-      'UPDATE super_admin SET password_hash = ? WHERE id = ?',
-      [passwordHash, req.superAdmin.id]
-    );
-
-    // Log the action (do not store password)
-    await AuditLog.create({
-      actionType: 'UPDATE',
-      entityType: 'SUPER_ADMIN',
-      entityId: req.superAdmin.id,
-      entityName: req.superAdmin.name || req.superAdmin.email,
-      performedById: req.superAdmin.id,
-      performedByType: 'SUPER_ADMIN',
-      performedByName: req.superAdmin.name,
-      description: 'Updated super admin password',
-      ipAddress: req.ip
-    });
-
-    res.json({ success: true, message: 'Password updated successfully' });
-  } catch (error) {
-    console.error('Error updating super admin password:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-
 // ==================== ADMIN CRUD ROUTES ====================
 
 // Get all admins
@@ -260,7 +157,6 @@ router.post('/admins', authenticateSuperAdmin, async (req, res) => {
       });
     }
 
-    // Check if email already exists
     const existing = await Admin.findByEmail(email);
     if (existing) {
       return res.status(400).json({
@@ -271,7 +167,6 @@ router.post('/admins', authenticateSuperAdmin, async (req, res) => {
 
     const newAdmin = await Admin.create(email, password, name);
 
-    // Log the action
     await AuditLog.create({
       actionType: 'CREATE',
       entityType: 'ADMIN',
@@ -313,7 +208,6 @@ router.put('/admins/:id', authenticateSuperAdmin, async (req, res) => {
     const params = [];
 
     if (email && email !== admin.email) {
-      // Check if new email already exists
       const existing = await Admin.findByEmail(email);
       if (existing && existing.id !== parseInt(id)) {
         return res.status(400).json({ success: false, message: 'Email already exists' });
@@ -350,7 +244,6 @@ router.put('/admins/:id', authenticateSuperAdmin, async (req, res) => {
 
     const updatedAdmin = await Admin.findById(id);
 
-    // Log the action
     await AuditLog.create({
       actionType: 'UPDATE',
       entityType: 'ADMIN',
@@ -389,7 +282,6 @@ router.delete('/admins/:id', authenticateSuperAdmin, async (req, res) => {
 
     await pool.query('DELETE FROM admin_users WHERE id = ?', [id]);
 
-    // Log the action
     await AuditLog.create({
       actionType: 'DELETE',
       entityType: 'ADMIN',
@@ -416,32 +308,47 @@ router.delete('/admins/:id', authenticateSuperAdmin, async (req, res) => {
 
 // ==================== AUDIT LOG ROUTES ====================
 
-// Get all audit logs (returns all logs for client-side pagination)
-router.get('/simple-logs', authenticateSuperAdmin, async (req, res) => {
+// Get audit logs with pagination and filtering
+router.get('/audit-logs', authenticateSuperAdmin, async (req, res) => {
   try {
-    const { entityType, actionType, employeeNumber, startDate, endDate, performedById, performedByName } = req.query;
+    const { 
+      page = 1, 
+      limit = 10, 
+      entityType, 
+      actionType, 
+      employeeNumber, 
+      startDate, 
+      endDate, 
+      adminName,
+      employeeName,
+      entityIds
+    } = req.query;
 
     const filters = {
-      entityType,
-      actionType,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      entityType: entityType || null,
+      actionType: actionType || null,
       employeeNumber: employeeNumber || null,
       startDate: startDate || null,
       endDate: endDate || null,
-      performedById: performedById || null,
-      performedByName: performedByName || null
+      adminName: adminName || null,
+      employeeName: employeeName || null,
+      entityIds: entityIds ? entityIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id)) : null
     };
 
-    // Get all logs without server-side pagination
-    const logs = await AuditLog.findAll({
-      page: 1,
-      limit: 10000, // Large number to get all logs
-      ...filters
-    });
+    const logs = await AuditLog.findAll(filters);
+    const total = await AuditLog.count(filters);
 
     res.json({
       success: true,
       logs,
-      count: logs.length
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
     });
 
   } catch (error) {
@@ -450,45 +357,41 @@ router.get('/simple-logs', authenticateSuperAdmin, async (req, res) => {
   }
 });
 
-// Get all audit logs
-router.get('/audit-logs', authenticateSuperAdmin, async (req, res) => {
+// Get simple logs (no pagination for client-side filtering)
+router.get('/simple-logs', authenticateSuperAdmin, async (req, res) => {
   try {
-    const { page = 1, limit = 10, entityType, actionType, employeeNumber, startDate, endDate, performedById, performedByName } = req.query;
+    const { 
+      entityType, 
+      actionType, 
+      employeeNumber, 
+      startDate, 
+      endDate, 
+      adminName,
+      employeeName
+    } = req.query;
 
     const filters = {
-      entityType,
-      actionType,
+      page: 1,
+      limit: 1000, // Get all logs for client-side filtering
+      entityType: entityType || null,
+      actionType: actionType || null,
       employeeNumber: employeeNumber || null,
       startDate: startDate || null,
       endDate: endDate || null,
-      performedById: performedById || null,
-      performedByName: performedByName || null
+      adminName: adminName || null,
+      employeeName: employeeName || null
     };
 
-    const parsedLimit = parseInt(limit) || 10;
-    const parsedPage = parseInt(page) || 1;
-
-    const logs = await AuditLog.findAll({
-      page: parsedPage,
-      limit: parsedLimit,
-      ...filters
-    });
-
-    const total = await AuditLog.count(filters);
+    const logs = await AuditLog.findAll(filters);
 
     res.json({
       success: true,
       logs,
-      pagination: {
-        page: parsedPage,
-        limit: parsedLimit,
-        total,
-        totalPages: Math.ceil(total / parsedLimit)
-      }
+      count: logs.length
     });
 
   } catch (error) {
-    console.error('Error fetching audit logs:', error);
+    console.error('Error fetching simple logs:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
@@ -510,13 +413,11 @@ router.delete('/audit-logs/:id', authenticateSuperAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if log exists
     const [existing] = await pool.query('SELECT * FROM audit_logs WHERE id = ?', [id]);
     if (existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Audit log not found' });
     }
 
-    // Delete the log
     await pool.query('DELETE FROM audit_logs WHERE id = ?', [id]);
 
     res.json({ success: true, message: 'Audit log deleted successfully' });
@@ -529,34 +430,23 @@ router.delete('/audit-logs/:id', authenticateSuperAdmin, async (req, res) => {
 // Delete multiple audit logs
 router.delete('/audit-logs', authenticateSuperAdmin, async (req, res) => {
   try {
-    const { ids, startDate, endDate, deleteAll } = req.body;
+    const { ids } = req.body;
 
-    let deletedCount = 0;
-
-    if (deleteAll) {
-      // Delete all logs
-      const [result] = await pool.query('DELETE FROM audit_logs');
-      deletedCount = result.affectedRows;
-    } else if (startDate && endDate) {
-      // Delete logs within date range
-      const [result] = await pool.query(
-        'DELETE FROM audit_logs WHERE created_at BETWEEN ? AND ?',
-        [startDate, endDate]
-      );
-      deletedCount = result.affectedRows;
-    } else if (ids && Array.isArray(ids) && ids.length > 0) {
-      // Delete specific logs by IDs
-      const placeholders = ids.map(() => '?').join(',');
-      const [result] = await pool.query(
-        `DELETE FROM audit_logs WHERE id IN (${placeholders})`,
-        ids
-      );
-      deletedCount = result.affectedRows;
-    } else {
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ success: false, message: 'No logs specified for deletion' });
     }
 
-    res.json({ success: true, message: `${deletedCount} audit log(s) deleted successfully`, deletedCount });
+    const placeholders = ids.map(() => '?').join(',');
+    const [result] = await pool.query(
+      `DELETE FROM audit_logs WHERE id IN (${placeholders})`,
+      ids
+    );
+
+    res.json({ 
+      success: true, 
+      message: `${result.affectedRows} audit log(s) deleted successfully`, 
+      deletedCount: result.affectedRows 
+    });
   } catch (error) {
     console.error('Error deleting audit logs:', error);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -566,37 +456,174 @@ router.delete('/audit-logs', authenticateSuperAdmin, async (req, res) => {
 // Get dashboard stats
 router.get('/stats', authenticateSuperAdmin, async (req, res) => {
   try {
-    // Get admin count
     const [adminCount] = await pool.query('SELECT COUNT(*) as count FROM admin_users');
-
-    // Get employee count
     const [employeeCount] = await pool.query('SELECT COUNT(*) as count FROM employees');
-
-    // Get today's activity count
     const [todayActivity] = await pool.query(
       'SELECT COUNT(*) as count FROM audit_logs WHERE DATE(created_at) = CURDATE()'
     );
-
-    // Get action breakdown for last 7 days
-    const [actionBreakdown] = await pool.query(`
-      SELECT action_type, COUNT(*) as count
-      FROM audit_logs
-      WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-      GROUP BY action_type
-    `);
 
     res.json({
       success: true,
       stats: {
         totalAdmins: adminCount[0].count,
         totalEmployees: employeeCount[0].count,
-        todayActivity: todayActivity[0].count,
-        actionBreakdown
+        todayActivity: todayActivity[0].count
       }
     });
 
   } catch (error) {
     console.error('Error fetching stats:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ==================== REPORT GENERATION ROUTES ====================
+
+// Generate audit log report
+router.post('/audit-logs/report', authenticateSuperAdmin, async (req, res) => {
+  try {
+    const {
+      format = 'pdf',
+      entityIds,
+      actionType,
+      employeeNumber,
+      startDate,
+      endDate,
+      adminName,
+      employeeName
+    } = req.body;
+
+    const filters = {
+      page: 1,
+      limit: 10000,
+      entityType: 'EMPLOYEE',
+      actionType: actionType || null,
+      employeeNumber: employeeNumber || null,
+      startDate: startDate || null,
+      endDate: endDate || null,
+      adminName: adminName || null,
+      employeeName: employeeName || null,
+      entityIds: entityIds ? (Array.isArray(entityIds) ? entityIds : [entityIds]) : null
+    };
+
+    const logs = await AuditLog.findAll(filters);
+
+    if (!logs || logs.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No audit logs found matching the specified criteria'
+      });
+    }
+
+    // Simple CSV generation
+    if (format.toLowerCase() === 'csv') {
+      const headers = ['ID', 'Action', 'Entity', 'Employee', 'Admin', 'Changes', 'Date'];
+      const csvRows = logs.map(log => [
+        log.id,
+        log.action_type,
+        log.entity_type,
+        log.entity_name,
+        log.performed_by_name,
+        log.description || 'No changes',
+        new Date(log.created_at).toLocaleString()
+      ]);
+
+      const csvContent = [
+        headers.join(','),
+        ...csvRows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+
+      const filename = `audit-logs-${new Date().toISOString().split('T')[0]}.csv`;
+
+      res.set({
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename="${filename}"`
+      });
+      return res.send(csvContent);
+    }
+    
+    else if (format.toLowerCase() === 'pdf') {
+  const PDFDocument = require('pdfkit');
+  const filename = `audit-logs-${new Date().toISOString().split('T')[0]}.pdf`;
+
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${filename}"`
+  });
+
+  const buffers = [];
+  const doc = new PDFDocument();
+  doc.on('data', buffers.push.bind(buffers));
+  doc.on('end', () => {
+    const pdfData = Buffer.concat(buffers);
+    res.send(pdfData);
+  });
+
+  // Title
+  doc.fontSize(20).text('Audit Logs Report', 50, 50);
+
+  let yPos = 100;
+
+  // Headers
+  const headers = ['ID', 'Action', 'Entity', 'Employee', 'Admin', 'Changes', 'Date'];
+  doc.fontSize(12).font('Helvetica-Bold');
+  headers.forEach((header, i) => {
+    doc.text(header, 50 + i * 70, yPos);
+  });
+  yPos += 30;
+
+  // Rows
+  doc.font('Helvetica').fontSize(10);
+  logs.forEach((log) => {
+    if (yPos > 700) {
+      doc.addPage();
+      yPos = 80;
+      // Re-print headers
+      doc.fontSize(12).font('Helvetica-Bold');
+      headers.forEach((header, i) => doc.text(header, 50 + i * 70, yPos));
+      yPos += 30;
+      doc.font('Helvetica').fontSize(10);
+    }
+
+    doc.text(log.id?.toString() || '', 50, yPos);
+    doc.text(log.action_type || '', 120, yPos);
+    doc.text(log.entity_type || '', 200, yPos);
+    doc.text(log.entity_name || '', 270, yPos);
+    doc.text(log.performed_by_name || '', 350, yPos);
+    doc.text((log.description || 'No changes').substring(0, 40), 430, yPos);
+    doc.text(new Date(log.created_at).toLocaleString(), 530, yPos);
+
+    yPos += 25;
+  });
+
+  doc.end();
+} 
+    else {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid format specified. Use "pdf" or "csv".'
+      });
+    }
+
+  } catch (error) {
+    console.error('Error generating report:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error generating report',
+      error: error.message
+    });
+  }
+});
+
+// Get employees for selection
+router.get('/employees', authenticateSuperAdmin, async (req, res) => {
+  try {
+    const [employees] = await pool.query(
+      'SELECT id, name, employee_number, email, department FROM employees ORDER BY name'
+    );
+    res.json(employees);
+  } catch (error) {
+    console.error('Error fetching employees:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

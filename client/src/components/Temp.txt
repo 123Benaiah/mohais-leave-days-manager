@@ -1,0 +1,1614 @@
+import React, {
+    useState,
+    useEffect,
+    useRef,
+    useCallback
+} from 'react';
+import {
+    BrowserRouter as Router,
+    Routes,
+    Route,
+    Navigate,
+    useNavigate
+} from 'react-router-dom';
+import axios from 'axios';
+import { BASE_URL } from './config';
+import './App.css';
+
+// PDF Generator Utility
+import { generateEmployeeReportPDF } from './utils/pdfGenerator';
+
+// Components 
+import AdminLogin from './components/AdminLogin';
+import ForgotPassword from './components/ForgotPassword';
+import ResetPassword from './components/ResetPassword';
+import AdminDashboard from './components/AdminDashboard';
+import AdminAuditLogs from './components/AdminAuditLogs';
+import SuperAdminLogin from './components/SuperAdminLogin';
+import SuperAdminDashboard from './components/SuperAdminDashboard';
+import ProtectedRoute from './components/ProtectedRoute';
+import PublicRoute from './components/PublicRoute';
+import { ToastProvider, useToast } from './components/ToastContext';
+import { FaTrash } from 'react-icons/fa';
+
+function EmployeeManager() {
+    const [employees, setEmployees] = useState([]);
+    const [filteredEmployees, setFilteredEmployees] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [message, setMessage] = useState('');
+    const [daysInput, setDaysInput] = useState({});
+    const [newEmployee, setNewEmployee] = useState({
+        name: '',
+        employee_number: '',
+        total_days: 150,
+        used_days: 0
+    });
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage] = useState(10);
+
+    // State for Modals
+    const [editingEmployee, setEditingEmployee] = useState(null);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+    // State for Floating Action Popup
+    const [activePopupId, setActivePopupId] = useState(null);
+    const [popupPosition, setPopupPosition] = useState({
+        top: 0,
+        left: 0
+    });
+
+    // State for Bulk Selection
+    const [selectedEmployees, setSelectedEmployees] = useState([]);
+    const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+    
+    // State for Export Loading
+    const [exportingCSV, setExportingCSV] = useState(false);
+    const [exportingPDF, setExportingPDF] = useState(false);
+    const [deletingBulk, setDeletingBulk] = useState(false);
+
+    const [toast, setToast] = useState({
+        show: false,
+        type: '',
+        title: '',
+        message: ''
+    });
+    const navigate = useNavigate();
+
+    const API_URL = `${BASE_URL}/api/employees`;
+    // Helper to get admin info from localStorage
+    const getAdminInfo = () => {
+        try {
+            const adminData = localStorage.getItem('adminData');
+            if (adminData) {
+                const admin = JSON.parse(adminData);
+                return {
+                    admin_id: admin.id,
+                    admin_name: admin.name || admin.email,
+                    admin_type: 'ADMIN'
+                };
+            }
+        } catch (e) {
+            console.error('Error getting admin info:', e);
+        }
+        return {};
+    };
+
+    // --- EFFECTS ---
+
+    // Handle click outside to close popup
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            // If the click is not on the pencil button and not inside the popup container, close it
+            if (activePopupId && !event.target.closest('.action-popup-content') && !event.target.closest('.pencil-btn')) {
+                setActivePopupId(null);
+            }
+        };
+
+        if (activePopupId) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [activePopupId]);
+
+    useEffect(() => {
+        fetchEmployees();
+    }, []);
+
+    useEffect(() => {
+        if (searchTerm) {
+            const filtered = employees.filter(emp =>
+                emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                emp.employee_number ?.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            setFilteredEmployees(filtered);
+            setCurrentPage(1);
+        } else {
+            setFilteredEmployees(employees);
+        }
+    }, [searchTerm, employees]);
+
+    useEffect(() => {
+        if (message) {
+            const timer = setTimeout(() => setMessage(''), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [message]);
+
+    // --- DATA FETCHING & UPDATES ---
+
+    const fetchEmployees = async () => {
+        try {
+            const response = await axios.get(API_URL);
+            setEmployees(response.data);
+            setFilteredEmployees(response.data);
+            setLoading(false);
+        } catch (error) {
+            console.error('Error:', error);
+            setMessage('Error loading employees: ' + error.message);
+            setLoading(false);
+        }
+    };
+
+    const updateEmployeeDays = async (id, days, action) => {
+        try {
+            const response = await axios.put(`${API_URL}/${id}`, {
+                days: days,
+                action: action,
+                ...getAdminInfo()
+            });
+
+            if (response.data) {
+                setEmployees(prev => prev.map(emp =>
+                    emp.id === id ? response.data : emp
+                ));
+                setDaysInput(prev => ({
+                    ...prev,
+                    [id]: ''
+                }));
+                return true;
+            }
+            showToast('error', 'Update Failed', 'No data received from server');
+            return false;
+        } catch (error) {
+            // Show detailed error message
+            const errorMessage = error.response ?.data ?.message || error.message || 'Failed to update employee days';
+            showToast('error', 'Update Failed', errorMessage);
+            console.error('Error updating employee days:', error);
+            return false;
+        }
+    };
+
+    const handleAddDays = async (id, days) => {
+        if (!isValidNumber(days)) return;
+        const employee = employees.find(emp => emp.id === id);
+        if (await updateEmployeeDays(id, days, 'add')) {
+            showToast('success', 'Days Added', `${days} days added to ${employee?.name || 'employee'}.`);
+        }
+    };
+
+const handleSubtractDays = async (id, days) => {
+  if (!isValidNumber(days)) {
+    return;
+  }
+
+  const employee = employees.find(emp => emp.id === id);
+  if (!employee) {
+    showToast('error', 'Error', 'Employee not found');
+    return;
+  }
+
+  const result = await updateEmployeeDays(id, days, 'subtract');
+  if (result) {
+    const newUsedDays =
+      employee.used_days - parseInt(days, 10);
+
+    const message = newUsedDays < 0
+      ? `${days} days subtracted from ${employee.name}. Result: ${newUsedDays} days (negative).`
+      : `${days} days subtracted from ${employee.name}. New total: ${newUsedDays} days.`;
+
+    showToast('success', 'Days Subtracted', message);
+  }
+};
+
+
+    const handleSetDays = async (id, days) => {
+        if (!isValidNumber(days)) return;
+        const employee = employees.find(emp => emp.id === id);
+        if (await updateEmployeeDays(id, days, 'set')) {
+            showToast('success', 'Days Set', `Used days set to ${days} for ${employee?.name || 'employee'}.`);
+        }
+    };
+
+    const handleAddEmployee = async (e) => {
+        e.preventDefault();
+        try {
+            const response = await axios.post(API_URL, {
+                name: newEmployee.name,
+                employee_number: newEmployee.employee_number,
+                total_days: parseInt(newEmployee.total_days) || 150,
+                used_days: parseInt(newEmployee.used_days) || 0,
+                ...getAdminInfo()
+            });
+
+            setEmployees(prev => [...prev, response.data]);
+            showToast('success', 'Employee Added', `${newEmployee.name} has been added successfully.`);
+            setNewEmployee({
+                name: '',
+                employee_number: '',
+                total_days: 150,
+                used_days: 0
+            });
+        } catch (error) {
+            showToast('error', 'Error', error.response ?.data ?.message || error.message);
+        }
+    };
+
+    const handleKeyPress = (e, id, action) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const value = daysInput[id];
+            if (action === 'add') handleAddDays(id, value);
+            else if (action === 'subtract') handleSubtractDays(id, value);
+            else if (action === 'set') handleSetDays(id, value);
+        }
+    };
+
+    const isValidNumber = (value) => {
+        if (value === '' || value === undefined || value === null) {
+            showToast('warning', 'Input Required', 'Please enter a number of days.');
+            return false;
+        }
+        const num = parseInt(value, 10);
+        if (isNaN(num)) {
+            showToast('warning', 'Invalid Input', 'Please enter a valid number.');
+            return false;
+        }
+        if (num === 0) {
+            showToast('warning', 'Invalid Input', 'Please enter a number other than zero.');
+            return false;
+        }
+        return true;
+    };
+
+    // --- POPUP & MODAL HANDLERS ---
+
+    const handleBackClick = () => {
+        navigate('/admin/dashboard');
+    };
+
+    const handlePencilClick = (e, employee) => {
+        e.stopPropagation(); // Stop event bubbling
+        const rect = e.currentTarget.getBoundingClientRect();
+
+        if (activePopupId === employee.id) {
+            setActivePopupId(null);
+        } else {
+            setActivePopupId(employee.id);
+            // Calculate position for fixed popup
+            setPopupPosition({
+                top: rect.bottom + 5, // 5px below button
+                left: rect.left + rect.width - 150 // Align to right side of button roughly
+            });
+        }
+    };
+
+    const handleEditClick = (employee) => {
+        setEditingEmployee({
+            ...employee
+        });
+        setShowEditModal(true);
+        setActivePopupId(null);
+    };
+
+    const handleDeleteClick = (employee) => {
+        setEditingEmployee(employee);
+        setShowDeleteConfirm(true);
+        setActivePopupId(null);
+    };
+
+    const handleEditSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            const response = await axios.put(`${API_URL}/${editingEmployee.id}`, {
+                name: editingEmployee.name,
+                employee_number: editingEmployee.employee_number,
+                total_days: parseInt(editingEmployee.total_days),
+                used_days: parseInt(editingEmployee.used_days),
+                action: 'update',
+                ...getAdminInfo()
+            });
+
+            setEmployees(prev => prev.map(emp =>
+                emp.id === editingEmployee.id ? response.data : emp
+            ));
+            setShowEditModal(false);
+            setEditingEmployee(null);
+            showToast('success', 'Employee Updated', `${editingEmployee.name} has been updated successfully.`);
+        } catch (error) {
+            showToast('error', 'Update Failed', error.response ?.data ?.message || error.message);
+        }
+    };
+
+    const handleDeleteConfirm = async () => {
+        const deletedName = editingEmployee.name;
+        try {
+            const adminInfo = getAdminInfo();
+            await axios.delete(
+                `${API_URL}/${editingEmployee.id}`, {
+                    params: {
+                        admin_id: adminInfo.admin_id,
+                        admin_name: adminInfo.admin_name,
+                        admin_type: adminInfo.admin_type
+                    }
+                }
+            );
+            setEmployees(prev => prev.filter(emp => emp.id !== editingEmployee.id));
+            setShowDeleteConfirm(false);
+            setEditingEmployee(null);
+            showToast('success', 'Employee Deleted', `${deletedName} has been removed from the system.`);
+        } catch (error) {
+            showToast('error', 'Delete Failed', error.response ?.data ?.message || error.message);
+        }
+    };
+
+    // --- TOAST ---
+    const showToast = (type, title, message) => {
+        setToast({
+            show: true,
+            type,
+            title,
+            message,
+            hiding: false
+        });
+        setTimeout(() => {
+            setToast(prev => ({
+                ...prev,
+                hiding: true
+            }));
+            setTimeout(() => {
+                setToast({
+                    show: false,
+                    type: '',
+                    title: '',
+                    message: '',
+                    hiding: false
+                });
+            }, 300);
+        }, 4000);
+    };
+
+    const closeToast = () => {
+        setToast(prev => ({
+            ...prev,
+            hiding: true
+        }));
+        setTimeout(() => {
+            setToast({
+                show: false,
+                type: '',
+                title: '',
+                message: '',
+                hiding: false
+            });
+        }, 300);
+    };
+
+    // --- BULK ACTIONS ---
+
+    const toggleEmployeeSelection = (employeeId) => {
+        setSelectedEmployees(prev => {
+            if (prev.includes(employeeId)) {
+                return prev.filter(id => id !== employeeId);
+            } else {
+                return [...prev, employeeId];
+            }
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedEmployees.length === currentEmployees.length) {
+            setSelectedEmployees([]);
+        } else {
+            setSelectedEmployees(currentEmployees.map(emp => emp.id));
+        }
+    };
+
+    const exportSelectedCSV = async () => {
+        if (selectedEmployees.length === 0) {
+            showToast('warning', 'No Selection', 'Please select employees to export.');
+            return;
+        }
+
+        setExportingCSV(true);
+        
+        try {
+            // Simulate small delay for file generation
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            const selected = employees.filter(emp => selectedEmployees.includes(emp.id));
+            const headers = ['Employee Number', 'Name', 'Total Days', 'Used Days', 'Remaining Days'];
+            const rows = selected.map(emp => [
+                emp.employee_number || '-',
+                emp.name,
+                emp.total_days,
+                emp.used_days,
+                emp.remaining_days
+            ]);
+
+            const csvContent = [
+                headers.join(','),
+                ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+            ].join('\n');
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', `employees_${new Date().getTime()}.csv`);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Give browser time to process download
+            await new Promise(resolve => setTimeout(resolve, 500));
+            URL.revokeObjectURL(url);
+            
+            showToast('success', 'Downloaded', `${selectedEmployees.length} employee(s) exported as CSV.`);
+        } catch (error) {
+            showToast('error', 'Download Failed', 'Failed to download CSV file. Please try again.');
+            console.error('CSV export error:', error);
+        } finally {
+            setExportingCSV(false);
+        }
+    };
+
+    const exportSelectedPDF = async () => {
+        if (selectedEmployees.length === 0) {
+            showToast('warning', 'No Selection', 'Please select employees to export.');
+            return;
+        }
+
+        setExportingPDF(true);
+
+        try {
+            // Filter the selected employees from the full employees array
+            const selected = employees.filter(emp => selectedEmployees.includes(emp.id));
+
+            // Use the utility to generate the PDF
+            await generateEmployeeReportPDF(selected);
+
+            showToast('success', 'Downloaded', `${selectedEmployees.length} employee(s) exported as PDF.`);
+        } catch (error) {
+            console.error('PDF export error:', error);
+            showToast('error', 'Download Failed', 'Failed to generate PDF. Please try again.');
+        } finally {
+            setExportingPDF(false);
+        }
+    };
+
+    const handleBulkDeleteClick = () => {
+        if (selectedEmployees.length === 0) {
+            showToast('warning', 'No Selection', 'Please select employees to delete.');
+            return;
+        }
+        setShowBulkDeleteModal(true);
+    };
+
+    const handleBulkDeleteConfirm = async () => {
+        setDeletingBulk(true);
+        try {
+            const adminInfo = getAdminInfo();
+            
+            // Delete all selected employees
+            await Promise.all(
+                selectedEmployees.map(id =>
+                    axios.delete(`${API_URL}/${id}`, {
+                        params: {
+                            admin_id: adminInfo.admin_id,
+                            admin_name: adminInfo.admin_name,
+                            admin_type: adminInfo.admin_type
+                        }
+                    })
+                )
+            );
+
+            setEmployees(prev => prev.filter(emp => !selectedEmployees.includes(emp.id)));
+            setSelectedEmployees([]);
+            setShowBulkDeleteModal(false);
+            showToast('success', 'Deleted', `${selectedEmployees.length} employee(s) have been deleted.`);
+        } catch (error) {
+            showToast('error', 'Delete Failed', error.response?.data?.message || error.message);
+        } finally {
+            setDeletingBulk(false);
+        }
+    };
+
+    // --- PAGINATION LOGIC ---
+    const indexOfLast = currentPage * itemsPerPage;
+    const indexOfFirst = indexOfLast - itemsPerPage;
+    const currentEmployees = filteredEmployees.slice(indexOfFirst, indexOfLast);
+    const totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
+    const maxVisibleButtons = 5;
+    const pageNumbers = [];
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisibleButtons / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisibleButtons - 1);
+
+    if (endPage - startPage < maxVisibleButtons - 1) {
+        startPage = Math.max(1, endPage - maxVisibleButtons + 1);
+    }
+    for (let i = startPage; i <= endPage; i++) {
+        pageNumbers.push(i);
+    }
+
+    // Find the active employee object for the popup
+    const activeEmployee = employees.find(emp => emp.id === activePopupId);
+
+    return ( <
+        div className = "App" >
+        <
+        header className = "App-header" > {
+            /* Back Button */
+        } <
+        div className = "back-button-container"
+        style = {
+            {
+                width: '100%',
+                marginBottom: '1rem',
+                display: 'flex',
+                justifyContent: 'flex-start'
+            }
+        } >
+        <
+        button onClick = {
+            handleBackClick
+        }
+        style = {
+            {
+                backgroundColor: 'var(--secondary-color)',
+                color: 'white',
+                padding: '0.6rem 1.2rem',
+                fontSize: '0.9rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                cursor: 'pointer',
+                border: 'none',
+                borderRadius: '4px'
+            }
+        } >
+        <
+        span style = {
+            {
+                fontSize: '1.1rem'
+            }
+        } > ← < /span>
+        Back to Dashboard <
+        /button> < /
+        div >
+
+        <
+        h1 > MOHAIS LEAVE DAYS MANAGER < /h1>
+
+        {
+            message && < div className = "message" > {
+                    message
+                } < /div>}
+
+                <
+                div className = "employee-list" >
+                <
+                h2 > Employee List < /h2>
+
+            {
+                /* Add New Employee Form */
+            } <
+            div className = "add-employee-form" >
+                <
+                h3 > Add New Employee < /h3> <
+            form onSubmit = {
+                    handleAddEmployee
+                } >
+                <
+                input
+            type = "text"
+            placeholder = "Name"
+            value = {
+                newEmployee.name
+            }
+            onChange = {
+                (e) => setNewEmployee({
+                    ...newEmployee,
+                    name: e.target.value
+                })
+            }
+            required
+                /
+                >
+                <
+                input
+            type = "text"
+            placeholder = "Employee Number (optional)"
+            value = {
+                newEmployee.employee_number
+            }
+            onChange = {
+                (e) => setNewEmployee({
+                    ...newEmployee,
+                    employee_number: e.target.value
+                })
+            }
+            /> <
+            input
+            type = "number"
+            placeholder = "Total Days"
+            value = {
+                newEmployee.total_days
+            }
+            onChange = {
+                (e) => setNewEmployee({
+                    ...newEmployee,
+                    total_days: e.target.value
+                })
+            }
+            min = "1" /
+                >
+                <
+                input
+            type = "number"
+            placeholder = "Used Days"
+            value = {
+                newEmployee.used_days
+            }
+            onChange = {
+                (e) => setNewEmployee({
+                    ...newEmployee,
+                    used_days: e.target.value
+                })
+            }
+            min = "0" /
+                >
+                <
+                button type = "submit" > Add Employee < /button> < /
+            form > <
+                /div>
+
+            {
+                /* Search Box */
+            } <
+            div className = "search-box" >
+                <
+                input
+            type = "text"
+            placeholder = "Search by name or employee number..."
+            value = {
+                searchTerm
+            }
+            onChange = {
+                (e) => setSearchTerm(e.target.value)
+            }
+            /> < /
+            div >
+
+                {
+                    loading ? ( <
+                        div className = "loading" > Loading employees... < /div>
+                    ) : currentEmployees.length === 0 ? ( <
+                            div className = "no-employees" > No employees found < /div>
+                        ) : ( <
+                            >
+                            {/* Bulk Action Bar */}
+                            {selectedEmployees.length > 0 && (
+                                <div className="bulk-action-bar">
+                                    <div className="bulk-action-content">
+                                        <span className="bulk-count">
+                                            {selectedEmployees.length} employee{selectedEmployees.length > 1 ? 's' : ''} selected
+                                        </span>
+                                        <div className="bulk-buttons">
+                                            <button
+                                                className="bulk-btn csv-btn"
+                                                onClick={exportSelectedCSV}
+                                                title="Export as CSV"
+                                                disabled={exportingCSV || exportingPDF || deletingBulk}
+                                            >
+                                                {exportingCSV ? (
+                                                    <>
+                                                        <span className="loader"></span>
+                                                        Exporting...
+                                                    </>
+                                                ) : (
+                                                    <>📊 CSV</>
+                                                )}
+                                            </button>
+                                            <button
+                                                className="bulk-btn pdf-btn"
+                                                onClick={exportSelectedPDF}
+                                                title="Export as PDF"
+                                                disabled={exportingCSV || exportingPDF || deletingBulk}
+                                            >
+                                                {exportingPDF ? (
+                                                    <>
+                                                        <span className="loader"></span>
+                                                        Generating...
+                                                    </>
+                                                ) : (
+                                                    <>📄 PDF</>
+                                                )}
+                                            </button>
+                                            <button
+                                                className="bulk-btn delete-btn"
+                                                onClick={handleBulkDeleteClick}
+                                                title="Delete selected"
+                                                disabled={exportingCSV || exportingPDF || deletingBulk}
+                                            >
+                                                 <FaTrash className="sa-btn-icon" /> Delete
+                                            </button>
+                                            <button
+                                                className="bulk-btn cancel-btn"
+                                                onClick={() => setSelectedEmployees([])}
+                                                title="Clear selection"
+                                                disabled={exportingCSV || exportingPDF || deletingBulk}
+                                            >
+                                                ✕ Clear
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className = "table-container" >
+                            <
+                            table >
+                            <
+                            thead >
+                            <
+                            tr >
+                            <
+                            th style={{ width: '40px' }}><input type="checkbox" checked={selectedEmployees.length === currentEmployees.length && currentEmployees.length > 0} onChange={toggleSelectAll} title="Select all" /></th> <
+                            th > Employee Number < /th> <
+                            th > Name < /th> <
+                            th > Total Days < /th> <
+                            th > Used Days < /th> <
+                            th > Remaining < /th> <
+                            th > Days < /th> <
+                            th > Actions < /th> < /
+                            tr > <
+                            /thead> <
+                            tbody > {
+                                currentEmployees.map((employee) => ( <
+                                    tr key = {
+                                        employee.id
+                                    } >
+                                    <
+                                    td style={{ width: '40px' }}><input type="checkbox" checked={selectedEmployees.includes(employee.id)} onChange={() => toggleEmployeeSelection(employee.id)} /></td> <
+                                    td > {
+                                        employee.employee_number || '-'
+                                    } < /td> <
+                                    td > {
+                                        employee.name
+                                    } < /td> <
+                                    td > {
+                                        employee.total_days
+                                    } < /td> <
+                                    td > {
+                                        employee.used_days
+                                    } < /td> <
+                                    td className = {
+                                        employee.remaining_days <= 10 ? 'low-days' : ''
+                                    } > {
+                                        employee.remaining_days
+                                    } <
+                                    /td> <
+                                    td >
+                                    <
+                                    input type = "number"
+                                    placeholder = "Days"
+                                    value = {
+                                        daysInput[employee.id] || ''
+                                    }
+                                    onChange = {
+                                        (e) => setDaysInput(prev => ({
+                                            ...prev,
+                                            [employee.id]: e.target.value
+                                        }))
+                                    }
+                                    onKeyPress = {
+                                        (e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                handleAddDays(employee.id, daysInput[employee.id]);
+                                            }
+                                        }
+                                    }
+                                    /> < /
+                                    td > <
+                                    td className = "actions" >
+                                    <
+                                    button onClick = {
+                                        () => handleAddDays(employee.id, daysInput[employee.id])
+                                    } > + < /button> <
+                                    button onClick = {
+                                        () => handleSubtractDays(employee.id, daysInput[employee.id])
+                                    } > - < /button> <
+                                    button onClick = {
+                                        () => handleSetDays(employee.id, daysInput[employee.id])
+                                    } > Set < /button>
+
+                                    {
+                                        /* Pencil Button */
+                                    } <
+                                    button className = "pencil-btn"
+                                    onClick = {
+                                        (e) => handlePencilClick(e, employee)
+                                    }
+                                    title = "More actions"
+                                    style = {
+                                        {
+                                            background: 'transparent',
+                                            border: '1px solid #ccc',
+                                            cursor: 'pointer',
+                                            borderRadius: '4px',
+                                            padding: '2px 6px',
+                                            marginLeft: '5px',
+                                            fontSize: '1rem'
+                                        }
+                                    } > ✏️
+                                    <
+                                    /button> < /
+                                    td > <
+                                    /tr>
+                                ))
+                            } <
+                            /tbody> < /
+                            table > <
+                            /div>
+
+                            {
+                                totalPages > 1 && ( <
+                                        div className = "pagination" >
+                                        <
+                                        button onClick = {
+                                            () => setCurrentPage(prev => Math.max(1, prev - 1))
+                                        }
+                                        disabled = {
+                                            currentPage === 1
+                                        }
+                                        className = "nav-btn" >
+                                        Prev <
+                                        /button> {
+                                        pageNumbers.map(number => ( <
+                                            button key = {
+                                                number
+                                            }
+                                            className = {
+                                                currentPage === number ? 'active' : ''
+                                            }
+                                            onClick = {
+                                                () => setCurrentPage(number)
+                                            } > {
+                                                number
+                                            } <
+                                            /button>
+                                        ))
+                                    } <
+                                    button onClick = {
+                                        () => setCurrentPage(prev => Math.min(totalPages, prev + 1))
+                                    }
+                                disabled = {
+                                    currentPage === totalPages
+                                }
+                                className = "nav-btn" >
+                                    Next<
+                                /button> < /
+                                div >
+                            )
+                        } <
+                        />
+                )
+        } <
+        /div>
+
+        {
+            /* FLOATING ACTION POPUP (Rendered outside table to ensure visibility) */
+        } {
+            activePopupId && activeEmployee && ( <
+                div className = "action-popup-content"
+                style = {
+                    {
+                        position: 'fixed',
+                        top: `${popupPosition.top}px`,
+                        left: `${popupPosition.left}px`,
+                        zIndex: 9999,
+                        backgroundColor: 'white',
+                        border: '1px solid #ddd',
+                        boxShadow: '0px 4px 12px rgba(0,0,0,0.15)',
+                        borderRadius: '4px',
+                        overflow: 'hidden',
+                        minWidth: '160px',
+                        display: 'flex',
+                        flexDirection: 'column'
+                    }
+                } >
+                <
+                button className = "popup-btn edit-btn"
+                onClick = {
+                    () => handleEditClick(activeEmployee)
+                }
+                style = {
+                    {
+                        padding: '10px 15px',
+                        background: 'white',
+                        border: 'none',
+                        borderBottom: '1px solid #eee',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        fontSize: '0.9rem',
+                        color: '#333',
+                        transition: 'background-color 0.2s'
+                    }
+                }
+                onMouseEnter = {
+                    (e) => e.target.style.backgroundColor = '#f9f9f9'
+                }
+                onMouseLeave = {
+                    (e) => e.target.style.backgroundColor = 'white'
+                } >
+                <
+                svg xmlns = "http://www.w3.org/2000/svg"
+                width = "16"
+                height = "16"
+                viewBox = "0 0 24 24"
+                fill = "none"
+                stroke = "currentColor"
+                strokeWidth = "2"
+                strokeLinecap = "round"
+                strokeLinejoin = "round" >
+                <
+                path d = "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" > < /path> <
+                path d = "M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" > < /path> < /
+                svg >
+                Edit Employee <
+                /button> <
+                button className = "popup-btn delete-btn"
+                onClick = {
+                    () => handleDeleteClick(activeEmployee)
+                }
+                style = {
+                    {
+                        padding: '10px 15px',
+                        background: 'white',
+                        border: 'none',
+                        color: 'red',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        fontSize: '0.9rem',
+                        transition: 'background-color 0.2s'
+                    }
+                }
+                onMouseEnter = {
+                    (e) => e.target.style.backgroundColor = '#fff0f0'
+                }
+                onMouseLeave = {
+                    (e) => e.target.style.backgroundColor = 'white'
+                } >
+                <
+                svg xmlns = "http://www.w3.org/2000/svg"
+                width = "16"
+                height = "16"
+                viewBox = "0 0 24 24"
+                fill = "none"
+                stroke = "currentColor"
+                strokeWidth = "2"
+                strokeLinecap = "round"
+                strokeLinejoin = "round" >
+                <
+                polyline points = "3 6 5 6 21 6" > < /polyline> <
+                path d = "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" > < /path> <
+                line x1 = "10"
+                y1 = "11"
+                x2 = "10"
+                y2 = "17" > < /line> <
+                line x1 = "14"
+                y1 = "11"
+                x2 = "14"
+                y2 = "17" > < /line> < /
+                svg >
+                Delete Employee <
+                /button> < /
+                div >
+            )
+        }
+
+        {
+            /* Edit Employee Modal */
+        } {
+            showEditModal && editingEmployee && ( <
+                div className = "modal-overlay"
+                style = {
+                    {
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0,0,0,0.5)',
+                        zIndex: 10000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }
+                }
+                onClick = {
+                    () => setShowEditModal(false)
+                } >
+                <
+                div className = "modal-content"
+                style = {
+                    {
+                        background: 'white',
+                        padding: '2rem',
+                        borderRadius: '8px',
+                        minWidth: '300px',
+                        maxWidth: '500px'
+                    }
+                }
+                onClick = {
+                    (e) => e.stopPropagation()
+                } >
+                <
+                h3 > Edit Employee < /h3> <
+                form onSubmit = {
+                    handleEditSubmit
+                } >
+                <
+                div className = "form-group"
+                style = {
+                    {
+                        marginBottom: '1rem'
+                    }
+                } >
+                <
+                label style = {
+                    {
+                        display: 'block',
+                        marginBottom: '0.5rem'
+                    }
+                } > Name: < /label> <
+                input type = "text"
+                value = {
+                    editingEmployee.name
+                }
+                onChange = {
+                    (e) => setEditingEmployee({
+                        ...editingEmployee,
+                        name: e.target.value
+                    })
+                }
+                required style = {
+                    {
+                        width: '100%',
+                        padding: '0.5rem'
+                    }
+                }
+                /> < /
+                div > <
+                div className = "form-group"
+                style = {
+                    {
+                        marginBottom: '1rem'
+                    }
+                } >
+                <
+                label style = {
+                    {
+                        display: 'block',
+                        marginBottom: '0.5rem'
+                    }
+                } > Employee Number: < /label> <
+                input type = "text"
+                value = {
+                    editingEmployee.employee_number || ''
+                }
+                onChange = {
+                    (e) => setEditingEmployee({
+                        ...editingEmployee,
+                        employee_number: e.target.value
+                    })
+                }
+                style = {
+                    {
+                        width: '100%',
+                        padding: '0.5rem'
+                    }
+                }
+                /> < /
+                div > <
+                div className = "form-group"
+                style = {
+                    {
+                        marginBottom: '1rem'
+                    }
+                } >
+                <
+                label style = {
+                    {
+                        display: 'block',
+                        marginBottom: '0.5rem'
+                    }
+                } > Total Days: < /label> <
+                input type = "number"
+                value = {
+                    editingEmployee.total_days
+                }
+                onChange = {
+                    (e) => setEditingEmployee({
+                        ...editingEmployee,
+                        total_days: e.target.value
+                    })
+                }
+                required style = {
+                    {
+                        width: '100%',
+                        padding: '0.5rem'
+                    }
+                }
+                /> < /
+                div > <
+                div className = "form-group"
+                style = {
+                    {
+                        marginBottom: '1rem'
+                    }
+                } >
+                <
+                label style = {
+                    {
+                        display: 'block',
+                        marginBottom: '0.5rem'
+                    }
+                } > Used Days: < /label> <
+                input type = "number"
+                value = {
+                    editingEmployee.used_days
+                }
+                onChange = {
+                    (e) => setEditingEmployee({
+                        ...editingEmployee,
+                        used_days: e.target.value
+                    })
+                }
+                required style = {
+                    {
+                        width: '100%',
+                        padding: '0.5rem'
+                    }
+                }
+                /> < /
+                div > <
+                div className = "modal-buttons"
+                style = {
+                    {
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        gap: '1rem'
+                    }
+                } >
+                <
+                button type = "button"
+                className = "cancel-btn"
+                onClick = {
+                    () => setShowEditModal(false)
+                }
+                style = {
+                    {
+                        padding: '0.5rem 1rem',
+                        cursor: 'pointer'
+                    }
+                } >
+                Cancel <
+                /button> <
+                button type = "submit"
+                className = "save-btn"
+                style = {
+                    {
+                        padding: '0.5rem 1rem',
+                        cursor: 'pointer',
+                        background: 'var(--primary-color)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px'
+                    }
+                } >
+                Save Changes <
+                /button> < /
+                div > <
+                /form> < /
+                div > <
+                /div>
+            )
+        }
+
+        {
+            /* Delete Confirmation Modal */
+        } {
+            showDeleteConfirm && editingEmployee && ( <
+                div className = "modal-overlay"
+                style = {
+                    {
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0,0,0,0.5)',
+                        zIndex: 10000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }
+                }
+                onClick = {
+                    () => setShowDeleteConfirm(false)
+                } >
+                <
+                div className = "modal-content delete-modal"
+                style = {
+                    {
+                        background: 'white',
+                        padding: '2rem',
+                        borderRadius: '8px',
+                        minWidth: '300px',
+                        textAlign: 'center'
+                    }
+                }
+                onClick = {
+                    (e) => e.stopPropagation()
+                } >
+                <
+                h3 > Confirm Delete < /h3> <
+                p > Are you sure you want to delete < strong > {
+                    editingEmployee.name
+                } < /strong>?</p >
+                <
+                p className = "warning-text"
+                style = {
+                    {
+                        color: 'red',
+                        fontSize: '0.9rem'
+                    }
+                } > This action cannot be undone. < /p> <
+                div className = "modal-buttons"
+                style = {
+                    {
+                        display: 'flex',
+                        justifyContent: 'center',
+                        gap: '1rem',
+                        marginTop: '1.5rem'
+                    }
+                } >
+                <
+                button type = "button"
+                className = "cancel-btn"
+                onClick = {
+                    () => setShowDeleteConfirm(false)
+                }
+                style = {
+                    {
+                        padding: '0.5rem 1rem',
+                        cursor: 'pointer'
+                    }
+                } >
+                Cancel <
+                /button> <
+                button type = "button"
+                className = "delete-confirm-btn"
+                onClick = {
+                    handleDeleteConfirm
+                }
+                style = {
+                    {
+                        padding: '0.5rem 1rem',
+                        cursor: 'pointer',
+                        background: 'red',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px'
+                    }
+                } >
+                Delete <
+                /button> < /
+                div > <
+                /div> < /
+                div >
+            )
+        }
+
+        {
+            /* Bulk Delete Confirmation Modal */
+        } {
+            showBulkDeleteModal && selectedEmployees.length > 0 && ( <
+                div className = "modal-overlay"
+                style = {
+                    {
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0,0,0,0.5)',
+                        zIndex: 10000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }
+                }
+                onClick = {
+                    () => setShowBulkDeleteModal(false)
+                } >
+                <
+                div className = "modal-content delete-modal"
+                style = {
+                    {
+                        background: 'white',
+                        padding: '2rem',
+                        borderRadius: '8px',
+                        minWidth: '350px',
+                        textAlign: 'center'
+                    }
+                }
+                onClick = {
+                    (e) => e.stopPropagation()
+                } >
+                <
+                h3 > Delete Selected Employees < /h3> <
+                p > Are you sure you want to delete < strong > {selectedEmployees.length} employee{selectedEmployees.length > 1 ? 's' : ''} < /strong>?</p >
+                <
+                p className = "warning-text"
+                style = {
+                    {
+                        color: 'red',
+                        fontSize: '0.9rem'
+                    }
+                } > This action cannot be undone. < /p> <
+                div className = "modal-buttons"
+                style = {
+                    {
+                        display: 'flex',
+                        justifyContent: 'center',
+                        gap: '1rem',
+                        marginTop: '1.5rem'
+                    }
+                } >
+                <
+                button type = "button"
+                className = "cancel-btn"
+                onClick = {
+                    () => setShowBulkDeleteModal(false)
+                }
+                style = {
+                    {
+                        padding: '0.5rem 1rem',
+                        cursor: 'pointer'
+                    }
+                } >
+                Cancel <
+                /button> <
+                button type = "button"
+                className = "delete-confirm-btn"
+                onClick = {
+                    handleBulkDeleteConfirm
+                }
+                disabled = {
+                    deletingBulk
+                }
+                style = {
+                    {
+                        padding: '0.5rem 1rem',
+                        cursor: deletingBulk ? 'not-allowed' : 'pointer',
+                        background: deletingBulk ? '#999' : 'red',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        opacity: deletingBulk ? 0.7 : 1
+                    }
+                } >
+                {deletingBulk ? (
+                    <>
+                        <span className="loader" style={{display: 'inline-block', marginRight: '8px'}}></span>
+                        Deleting...
+                    </>
+                ) : (
+                    <>Delete {selectedEmployees.length}</>
+                )} <
+                /button> < /
+                div > <
+                /div> < /
+                div >
+            )
+        }
+
+        {
+            /* Toast Notification */
+        } {
+            toast.show && ( <
+                div className = {
+                    `notification-toast ${toast.hiding ? 'hiding' : ''}`
+                } >
+                <
+                div className = "toast-content" >
+                <
+                div className = {
+                    `toast-icon ${toast.type}`
+                } > {
+                    toast.type === 'success' && '✓'
+                } {
+                    toast.type === 'error' && '✕'
+                } {
+                    toast.type === 'warning' && '⚠'
+                } {
+                    toast.type === 'info' && 'ℹ'
+                } <
+                /div> <
+                div className = "toast-message" >
+                <
+                h4 > {
+                    toast.title
+                } < /h4> <
+                p > {
+                    toast.message
+                } < /p> < /
+                div > <
+                button className = "toast-close"
+                onClick = {
+                    closeToast
+                } > × < /button> < /
+                div > <
+                div className = {
+                    `toast-progress ${toast.type}`
+                } > < /div> < /
+                div >
+            )
+        } <
+        /header> < /
+        div >
+    );
+}
+
+// Routes wrapper component that has access to toast context
+function AppRoutes() {
+    const { showToast } = useToast();
+
+    const handleUnauthorizedAdmin = useCallback(() => {
+        showToast('warning', 'Access Denied', 'Please log in to access this page.');
+    }, [showToast]);
+
+    const handleUnauthorizedSuperAdmin = useCallback(() => {
+        showToast('warning', 'Access Denied', 'Please log in as Super Admin to access this page.');
+    }, [showToast]);
+
+    const handleAlreadyAuthenticatedAdmin = useCallback(() => {
+        showToast('info', 'Already Logged In', 'You are already logged in. Redirecting to dashboard.');
+    }, [showToast]);
+
+    const handleAlreadyAuthenticatedSuperAdmin = useCallback(() => {
+        showToast('info', 'Already Logged In', 'You are already logged in as Super Admin. Redirecting to dashboard.');
+    }, [showToast]);
+
+    return (
+        <Routes>
+            {/* Default route */}
+            <Route path="/" element={<Navigate to="/admin/login" replace />} />
+
+            {/* Admin Public Routes (accessible only when NOT logged in) */}
+            <Route
+                path="/admin/login"
+                element={
+                    <PublicRoute
+                        authType="admin"
+                        onAlreadyAuthenticated={handleAlreadyAuthenticatedAdmin}
+                    >
+                        <AdminLogin />
+                    </PublicRoute>
+                }
+            />
+            <Route
+                path="/admin/forgot-password"
+                element={<ForgotPassword />}
+            />
+            <Route
+                path="/admin/reset-password/:token"
+                element={<ResetPassword />}
+            />
+
+            {/* Admin Protected Routes (require admin login) */}
+            <Route
+                path="/admin/dashboard"
+                element={
+                    <ProtectedRoute
+                        authType="admin"
+                        onUnauthorized={handleUnauthorizedAdmin}
+                    >
+                        <AdminDashboard />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/employees"
+                element={
+                    <ProtectedRoute
+                        authType="admin"
+                        onUnauthorized={handleUnauthorizedAdmin}
+                    >
+                        <EmployeeManager />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/admin/audit-logs"
+                element={
+                    <ProtectedRoute
+                        authType="admin"
+                        onUnauthorized={handleUnauthorizedAdmin}
+                    >
+                        <AdminAuditLogs />
+                    </ProtectedRoute>
+                }
+            />
+
+            {/* Super Admin Public Routes */}
+            <Route
+                path="/super-admin/login"
+                element={
+                    <PublicRoute
+                        authType="superAdmin"
+                        onAlreadyAuthenticated={handleAlreadyAuthenticatedSuperAdmin}
+                    >
+                        <SuperAdminLogin />
+                    </PublicRoute>
+                }
+            />
+
+            {/* Super Admin Protected Routes */}
+            <Route
+                path="/super-admin/dashboard"
+                element={
+                    <ProtectedRoute
+                        authType="superAdmin"
+                        onUnauthorized={handleUnauthorizedSuperAdmin}
+                    >
+                        <SuperAdminDashboard />
+                    </ProtectedRoute>
+                }
+            />
+
+            {/* Catch all - redirect to admin login */}
+            <Route path="*" element={<Navigate to="/admin/login" replace />} />
+        </Routes>
+    );
+}
+
+// Main App Component with Routing
+function App() {
+    return (
+        <ToastProvider>
+            <Router>
+                <AppRoutes />
+            </Router>
+        </ToastProvider>
+    );
+}
+
+export default App;
